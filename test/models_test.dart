@@ -38,4 +38,13 @@ void main() {
     expect(parseDecimal('1.234,56'), 1234.56);
     expect(parseDecimal('1234.56'), 1234.56);
   });
+
+  test('UnitOption lê unidade do produto com fator', () {
+    final u = UnitOption.fromJson(
+        {'unit': 'cx', 'unit_description': 'Caixa', 'fator': '12'},
+        fromProduct: true);
+    expect(u.unit, 'CX');
+    expect(u.factor, 12);
+    expect(u.label, 'CX — Caixa — × 12');
+  });
 }
