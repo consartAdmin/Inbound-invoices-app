@@ -309,6 +309,39 @@ class Lot {
       ].join(' • ');
 }
 
+/// Unidade de medida: do cadastro geral (/api/units) ou do produto
+/// (/api/products/:code/units, com o fator da embalagem).
+class UnitOption {
+  final String unit;
+  final String description;
+  final double factor;
+  final bool fromProduct;
+  final bool standard;
+
+  UnitOption(this.unit, this.description, this.factor,
+      {this.fromProduct = false, this.standard = false});
+
+  factory UnitOption.fromJson(Map<String, dynamic> j,
+      {bool fromProduct = false}) {
+    final f = numOf(j['fator'] ?? j['factor'] ?? j['conversion_factor']);
+    return UnitOption(
+      str(j['unit'] ?? j['unit_code'] ?? j['sigla'] ?? j['unidade'])
+          .trim()
+          .toUpperCase(),
+      str(j['unit_description'] ?? j['description'] ?? j['descricao']).trim(),
+      f > 0 ? f : 1,
+      fromProduct: fromProduct,
+      standard: boolOf(j['standard']),
+    );
+  }
+
+  String get label => [
+        unit,
+        if (description.isNotEmpty) description,
+        if (factor != 1) '× ${formatQty(factor)}',
+      ].join(' — ');
+}
+
 /// Leitura dos campos de um item da nota (Map vindo do ERP).
 extension InvoiceItem on Map<String, dynamic> {
   String get nfCode => str(this['nf_product_code']);

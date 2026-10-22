@@ -22,6 +22,7 @@ class ImportPage extends StatefulWidget {
 
 class _ItemState {
   List<Lot> lots = [];
+  List<UnitOption> units = [];
   bool loadingLots = false;
   String? lotsError;
   bool linking = false;
@@ -59,6 +60,7 @@ class _ImportPageState extends State<ImportPage> {
     for (final i in p.installments) Map<String, dynamic>.from(i)
   ];
 
+  List<UnitOption> _allUnits = [];
   bool _requireLot = true;
   bool _modeLoaded = false;
   bool _saving = false;
@@ -75,6 +77,37 @@ class _ImportPageState extends State<ImportPage> {
   void initState() {
     super.initState();
     _loadMode();
+    _loadUnits();
+  }
+
+  Future<void> _loadUnits() async {
+    try {
+      final units = await _api.listUnits();
+      if (mounted) setState(() => _allUnits = units);
+    } catch (_) {}
+    for (var i = 0; i < _items.length; i++) {
+      if (_items[i].isLinked) _loadProductUnits(i);
+    }
+  }
+
+  Future<void> _loadProductUnits(int index) async {
+    final code = _items[index].productCode;
+    if (code.isEmpty) return;
+    try {
+      final units = await _api.productUnits(code);
+      if (!mounted || _items[index].productCode != code) return;
+      setState(() => _itemStates[index].units = units);
+    } catch (_) {}
+  }
+
+  void _setUnit(Map<String, dynamic> item, _ItemState st, String? unit) {
+    if (unit == null) return;
+    item['unit'] = unit;
+    final fromProduct = st.units.where((u) => u.unit == unit).firstOrNull;
+    if (fromProduct != null) {
+      item['conversion_factor'] = fromProduct.factor;
+      item['barcode_unit'] = unit;
+    }
   }
 
   @override
@@ -210,7 +243,11 @@ class _ImportPageState extends State<ImportPage> {
         final unit = _barcodeUnit(full);
         if (unit != null) item['unit'] = unit;
       });
-      if (_requireLot) await _loadLots(index);
+      setState(() => st.units = []);
+      await Future.wait([
+        _loadProductUnits(index),
+        if (_requireLot) _loadLots(index),
+      ]);
     } catch (e) {
       if (mounted) showSnack(context, 'Erro ao vincular: $e', error: true);
     } finally {
@@ -706,6 +743,44 @@ class _ImportPageState extends State<ImportPage> {
     );
   }
 
+  Widget _unitField(int i) {
+    final it = _items[i];
+    final st = _itemStates[i];
+    final current = it.unit.trim().toUpperCase();
+    final productUnits = st.units;
+    final productSet = productUnits.map((u) => u.unit).toSet();
+    final others = _allUnits.where((u) => !productSet.contains(u.unit));
+    final known = {...productSet, ...others.map((u) => u.unit)};
+    final xmlUnit = str(it['xml_unit']).trim();
+    return DropdownButtonFormField<String>(
+      key: ValueKey('unit-$i-${it.productCode}-${productUnits.length}-${_allUnits.length}'),
+      initialValue: current.isEmpty ? null : current,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: 'Unidade',
+        helperText: xmlUnit.isNotEmpty && xmlUnit.toUpperCase() != current
+            ? 'Unidade na NF-e: $xmlUnit'
+            : null,
+      ),
+      items: [
+        if (current.isNotEmpty && !known.contains(current))
+          DropdownMenuItem(value: current, child: Text(current)),
+        for (final u in productUnits)
+          DropdownMenuItem(
+            value: u.unit,
+            child: Text('${u.label}  (do produto)',
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+          ),
+        for (final u in others)
+          DropdownMenuItem(
+              value: u.unit,
+              child: Text(u.label, overflow: TextOverflow.ellipsis)),
+      ],
+      onChanged: _saving ? null : (v) => setState(() => _setUnit(it, st, v)),
+    );
+  }
+
   Widget _itemCard(int i) {
     final theme = Theme.of(context);
     final it = _items[i];
@@ -765,6 +840,8 @@ class _ImportPageState extends State<ImportPage> {
                       child: Text(it.isLinked ? 'Trocar' : 'Vincular'),
                     ),
             ]),
+            const SizedBox(height: 6),
+            _unitField(i),
             if (_requireLot && it.isLinked) ...[
               const SizedBox(height: 6),
               if (st.loadingLots)

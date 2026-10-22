@@ -379,6 +379,35 @@ class ApiService {
     return d is Map ? d.cast<String, dynamic>() : json;
   }
 
+  List<UnitOption>? _unitsCache;
+
+  /// Todas as unidades ativas do cadastro (a mesma lista da tela web).
+  Future<List<UnitOption>> listUnits() async {
+    if (_unitsCache != null) return _unitsCache!;
+    final rows = _rows(await _send('GET', '/api/units',
+        query: {'onlyActive': '1', 'limit': '1000'}));
+    // Sem códigos repetidos: o seletor não aceita valores duplicados.
+    final seen = <String>{};
+    final list = rows
+        .map((r) => UnitOption.fromJson(r))
+        .where((u) => u.unit.isNotEmpty && seen.add(u.unit))
+        .toList()
+      ..sort((a, b) => a.unit.compareTo(b.unit));
+    return _unitsCache = list;
+  }
+
+  /// Unidades cadastradas no produto (códigos de barras com fator).
+  Future<List<UnitOption>> productUnits(String code) async {
+    final rows = _rows(await _send('GET', '/api/products/${_enc(code)}/units'));
+    final seen = <String>{};
+    final out = <UnitOption>[];
+    for (final r in rows) {
+      final u = UnitOption.fromJson(r, fromProduct: true);
+      if (u.unit.isNotEmpty && seen.add(u.unit)) out.add(u);
+    }
+    return out;
+  }
+
   /// Lotes do produto (inclusive zerados). Tenta pelo SKU e depois pelo
   /// estoque, como a tela web.
   Future<List<Lot>> listLots(String productCode, int? stockId) async {
